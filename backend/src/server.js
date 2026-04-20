@@ -1,42 +1,50 @@
 import express from "express";
-// const express = require('express');
-// import {ENV} from './lib/env.js';
 import path from "path";
-import dotenv from "dotenv";
-import mongoose from "mongoose";
+import cors from "cors";
+import { serve } from "inngest/express";
+import { clerkMiddleware } from "@clerk/express";
+
+import { ENV } from "./lib/env.js";
+import { connectDB } from "./lib/db.js";
+import { inngest, functions } from "./lib/inngest.js";
+
+import chatRoutes from "./routes/chatRoutes.js";
+import sessionRoutes from "./routes/sessionRoute.js";
+
 const app = express();
+
 const __dirname = path.resolve();
 
+// middleware
 app.use(express.json());
-dotenv.config();
+// credentials:true meaning?? => server allows a browser to include cookies on request
+app.use(cors({ origin: ENV.CLIENT_URL, credentials: true }));
+app.use(clerkMiddleware()); // this adds auth field to request object: req.auth()
 
-const PORT = process.env.PORT || 3000;
+app.use("/api/inngest", serve({ client: inngest, functions }));
+app.use("/api/chat", chatRoutes);
+app.use("/api/sessions", sessionRoutes);
 
-export const connectDB = async () => {
-  try {
-    const conn = await mongoose.connect(process.env.DB_URL);
-    console.log("✅ Connected to MongoDB");
-  } catch (error) {
-    console.error("❌ Error connecting to MongoDB:", error.message);
-    process.exit(1);
-  }
-};
-
-app.get("/", (req, res) => {
-  res.status(200).json({ message: "Welcome to the Recuriter backend API!" });
-});
-app.get("/books", (req, res) => {
-  res.status(200).json({ message: "Books endpoint is working!" });
+app.get("/health", (req, res) => {
+  res.status(200).json({ msg: "api is up and running" });
 });
 
-if (process.env.NODE_ENV === "production") {
+// make our app ready for deployment
+if (ENV.NODE_ENV === "production") {
   app.use(express.static(path.join(__dirname, "../frontend/dist")));
+
   app.get("/{*any}", (req, res) => {
     res.sendFile(path.join(__dirname, "../frontend", "dist", "index.html"));
   });
 }
 
-app.listen(process.env.PORT, async() => {
-  console.log(`Server is running on port ${process.env.PORT}`);
-  await connectDB();
-});
+const startServer = async () => {
+  try {
+    await connectDB();
+    app.listen(ENV.PORT, () => console.log("Server is running on port:", ENV.PORT));
+  } catch (error) {
+    console.error("💥 Error starting the server", error);
+  }
+};
+
+startServer();
